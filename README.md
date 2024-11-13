@@ -24,7 +24,6 @@ plot2 <- FeatureScatter(object = pbmc, feature1 = "nCount_RNA", feature2 = "perc
 CombinePlots(plots = list(plot1, plot2))
 dev.off()
 
-# c <- NormalizeData(object=pbmc, normalization.method="LogNormalize", scale.factor=10000)
 #??? c <- FindVariableFeatures(object=pbmc, selection.method="vst", nfeatures=1500)
 #??? 10 <- head(x = VariableFeatures(object = pbmc), 10)
 pdf(file="01.featureVar.pdf", width=10, height=6)
@@ -34,8 +33,6 @@ CombinePlots(plots = list(plot1, plot2))
 dev.off()
 
 
-
-#### c=ScaleData(pbmc)        #PCACA(object= pbmc, npcs=20, pc.genes=VariableFeatures(object=pbmc))     #PCA????
 pbmc=RunHarmony(pbmc, "orig.ident")
 
 #????ÿ??P "02.pcaGene.pdf", width=10, height=8)
@@ -145,7 +142,6 @@ pData(cds)[,"Cluster"]=paste0("cluster",pData(cds)[,"Cluster"])
 names(clusterAnn)=paste0("cluster",monocle.clusterAnn[,1])
 pData(cds)$cell_type2 <- plyr::revalue(as.character(pData(cds)$Cluster),clusterAnn)
 
-# timateSizeFactors(cds)
 cds <- estgc()
 imateDispersions(cds)
 cds <- setgc()
@@ -165,6 +161,93 @@ plot_cell_trajectory(cds,color_by = "cell_type2")
 dev.off()
 #????????? "06.trajectory.cluster.pdf",width=6.5,height=6)
 plot_cell_trajectory(cds, color_by = "Cluster")
+dev.off()
+
+library(usethis)
+library(devtools)
+library(limma)
+library(registry)
+library(rngtools)
+library(cluster)
+library(NMF)
+library(ggplot2)
+library(ggalluvial)
+library(svglite)
+library(dplyr)
+library(igraph)
+library(CellChat)
+setwd("/")
+
+ 
+load("Seurat.Rdata")
+expMatrix=as.matrix(pbmc@assays$RNA$data)
+meta=as.data.frame(cellAnn)
+colnames(meta)[1]="labels"
+row.names(meta)=names(pbmc$seurat_clusters)
+
+ 
+cellchat <- createCellChat(object = expMatrix, meta = meta, group.by = "labels")
+cellchat <- setIdent(cellchat, ident.use="labels")
+groupSize <- as.numeric(table(cellchat@idents))      
+
+ 
+CellChatDB <- CellChatDB.human       
+CellChatDB.use <- subsetDB(CellChatDB, search = "Secreted Signaling")
+cellchat@DB <- CellChatDB.use
+
+ 
+pdf(file="COMM01.DatabaseCategory.pdf", width=7, height=5)
+showDatabaseCategory(CellChatDB)
+dev.off()
+
+ 
+cellchat <- subsetData(cellchat)
+cellchat <- identifyOverExpressedGenes(cellchat)       
+cellchat <- identifyOverExpressedInteractions(cellchat)      
+cellchat <- projectData(cellchat, PPI.human)  
+
+ 
+cellchat <- computeCommunProb(cellchat)
+ 
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+ 
+df.net=subsetCommunication(cellchat)
+write.table(file="COMM02.Comm.network.xls", df.net, sep="\t", row.names=F, quote=F)
+
+ 
+cellchat <- computeCommunProbPathway(cellchat)
+
+ 
+cellchat <- aggregateNet(cellchat)
+ 
+pdf(file="COMM03.cellNetworkCount.pdf", width=7, height=6)
+netVisual_circle(cellchat@net$count, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Number of interactions")
+dev.off()
+ 
+pdf(file="COMM04.cellNetworkWeight.pdf", width=7, height=6)
+netVisual_circle(cellchat@net$weight, vertex.weight = groupSize, weight.scale = T, label.edge= F, title.name = "Interaction strength")
+dev.off()
+
+ (file="COMM05.singleCell.pdf", width=9, height=7.5)
+weight_mat <- cellchat@net$weight
+par(mfrow = c(2,3), mgp=c(0,0,0), xpd=TRUE)
+for (cel in unique(cellchat@idents)){
+  cir_mat <- matrix(0, nrow = nrow(weight_mat), ncol = ncol(weight_mat), dimnames = dimnames(weight_mat))
+  cir_mat[cel, ] <- weight_mat[cel, ]
+  netVisual_circle( cir_mat, vertex.weight= groupSize, weight.scale= T,edge.weight.max = max(weight_mat), vertex.label.cex=0.8,title.name=cel)
+}
+dev.off()
+
+#??? l in unique(cellchat@idents)){
+  cir_mat <- matrix(0, nrow = nrow(weight_mat), ncol = ncol(weight_mat), dimnames = dimnames(weight_mat))
+  cir_mat[cel, ] <- weight_mat[cel, ]
+  pdf(file=paste0("COMM05.", cel, ".pdf"), width=6.5, height=5.5)
+  netVisual_circle( cir_mat, vertex.weight= groupSize, weight.scale= T,edge.weight.max = max(weight_mat), vertex.label.cex=0.8,title.name=cel)
+  dev.off()
+}
+
+#????ϸ? e="COMM06.bubble.pdf", width=9.5, height=6)
+netVisual_bubble(cellchat, remove.isolate = FALSE, angle.x=45)
 dev.off()
 
 
